@@ -4,23 +4,38 @@ using System.Windows.Forms;
 
 namespace Dezbateri
 {
-    public partial class Form1 : Form
+    public partial class DiscussionForm : Form
     {
-        public Form1()
+        public DiscussionForm()
         {
             InitializeComponent();
-            mappingBetweenPublishButtonAndInputWithTopicName = new Dictionary<Button, (TextBox inputField, string discussionTopicName)>
+
+            InitDictionaries();
+
+            buttonPubSportMsg.Click += PublishMessageButtonClicked;
+            buttonPubEducMsg.Click += PublishMessageButtonClicked;
+            buttonPubPoliticsMsg.Click += PublishMessageButtonClicked;
+            buttonPubTechMsg.Click += PublishMessageButtonClicked;
+            ShowPublishDisplay(false);
+
+            processData.RabbitMQHandler.MessageReceivedHandler += this.MessageReceived;
+
+
+            // modif noi -> procesele aleg liderul singure
+            tokenHandler = new TokenHandler();
+            tokenHandler.TokenReceivedHandler += TokenReceivedHandler;
+            tokenHandler.LeaveTokenHandler += LeaveToken;
+        }
+
+        private void InitDictionaries()
+        {
+            publishButtonToInputTopicMap = new Dictionary<Button, (TextBox inputField, string discussionTopicName)>
             {
                 [buttonPubSportMsg] = (textBoxPubSportMsg, "Sport"),
                 [buttonPubEducMsg] = (textBoxEducPubMsg, "Educatie"),
                 [buttonPubPoliticsMsg] = (textBoxPoliticsMsg, "Politica"),
                 [buttonPubTechMsg] = (textBoxTechMsgs, "Tehnologie")
             };
-            buttonPubSportMsg.Click += PublishMessageButtonClicked;
-            buttonPubEducMsg.Click += PublishMessageButtonClicked;
-            buttonPubPoliticsMsg.Click += PublishMessageButtonClicked;
-            buttonPubTechMsg.Click += PublishMessageButtonClicked;
-            ShowOrHidePublishDisplay(false);
 
             topicNameAndOutputListBox = new Dictionary<string, ListBox>
             {
@@ -30,22 +45,21 @@ namespace Dezbateri
                 ["Tehnologie"] = listBoxSubTehnologie
             };
 
-            dateUtilizator.RabbitMQHandler.MessageReceivedHandler += this.MessageReceived;
-
-
-            // modif noi -> procesele aleg liderul singure
-            tokenHandler = new TokenHandler();
-            tokenHandler.TokenReceivedHandler += TokenReceivedHandler;
-            tokenHandler.LeaveTokenHandler += LeaveToken;
+            sentMessages = new Dictionary<string, List<string>>
+            {
+                ["Sport"] = new List<string>(),
+                ["Politica"] = new List<string>(),
+                ["Educatie"] = new List<string>(),
+                ["Tehnologie"] = new List<string>()
+            };
         }
 
-        private Dictionary<string, List<string>> sentMessages = new Dictionary<string, List<string>>
-        {
-            ["Sport"] = new List<string>(),
-            ["Politica"] = new List<string>(),
-            ["Educatie"] = new List<string>(),
-            ["Tehnologie"] = new List<string>()
-        };
+        private Dictionary<string, List<string>> sentMessages;
+        private ProcessData processData = new ProcessData();
+        private TokenHandler tokenHandler;
+
+        private Dictionary<Button, (TextBox inputField, string discussionTopicName)> publishButtonToInputTopicMap;
+        private Dictionary<string, ListBox> topicNameAndOutputListBox;
 
         private void MessageReceived(string msg)
         {
@@ -64,7 +78,7 @@ namespace Dezbateri
         private void PublishMessageButtonClicked(object sender, EventArgs e)
         {
             Button button = sender as Button;
-            var pair = mappingBetweenPublishButtonAndInputWithTopicName[button];
+            var pair = publishButtonToInputTopicMap[button];
             string text = pair.inputField.Text;
             if (String.IsNullOrWhiteSpace(text))
             {
@@ -76,7 +90,7 @@ namespace Dezbateri
             }
             else
             {
-                dateUtilizator.SendMessage(pair.discussionTopicName, text);
+                processData.SendMessage(pair.discussionTopicName, text);
                 pair.inputField.Text = String.Empty;
                 sentMessages[pair.discussionTopicName].Add(text);
             }
@@ -98,38 +112,31 @@ namespace Dezbateri
             int tokenDuration = int.Parse(textBoxDurataToken.Text);
             int entryPort = int.Parse(textBoxPortIntrare.Text);
             int exitPort = int.Parse(textBoxPortIesire.Text);
-            if (dateUtilizator.PublishTopics.Count < 2)
+            if (processData.PublishTopics.Count < 2)
             {
                 MessageBox.Show("Fiecare persoana trebuie sa faca publish la cel putin 2 topicuri!");
                 return;
             }
 
-            if (dateUtilizator.SubscribeTopics.Count < 2)
+            if (processData.SubscribeTopics.Count < 2)
             {
                 MessageBox.Show("Fiecare persoana trebuie sa faca subscribe la cel putin 2 topicuri!");
                 return;
             }
 
-            dateUtilizator.Name = username;
-            dateUtilizator.TotalTokenDuration = tokenDuration;
-            dateUtilizator.LeftTokenDuration = tokenDuration;
-            dateUtilizator.EntryPort = entryPort;
-            dateUtilizator.ExitPort = exitPort;
+            processData.Name = username;
+            processData.TotalTokenDuration = tokenDuration;
+            processData.LeftTokenDuration = tokenDuration;
+            processData.EntryPort = entryPort;
+            processData.ExitPort = exitPort;
 
             buttonGrabToken.Enabled = buttonBeginWaitingForToken.Enabled = true;
-            dateUtilizator.CloseSubscriptions();
-            dateUtilizator.SubscribeToSubscriptionTopics();
+            processData.CloseSubscriptions();
+            processData.SubscribeToSubscriptionTopics();
 
             // ** Functia de pornire a socket-urilor
-            tokenHandler.InitializeSockets(entryPort, exitPort, dateUtilizator.Name, checkBoxBeginElectionAlg.Checked);
+            tokenHandler.InitializeSockets(entryPort, exitPort, processData.Name, checkBoxBeginElectionAlg.Checked);
         }
-
-        private DateUtilizator dateUtilizator = new DateUtilizator();
-        private TokenHandler tokenHandler;
-
-        private Dictionary<Button, (TextBox inputField, string discussionTopicName)>
-            mappingBetweenPublishButtonAndInputWithTopicName;
-        private Dictionary<string, ListBox> topicNameAndOutputListBox;
 
         private void ButtonAddTopicToYourSub_Click(object sender, EventArgs e)
         {
@@ -137,7 +144,7 @@ namespace Dezbateri
             if (index != -1)
             {
                 string topic = listBoxAllTopicsSubscription.Items[index].ToString();
-                dateUtilizator.SubscribeTopics.Add(topic);
+                processData.SubscribeTopics.Add(topic);
                 listBoxYourSubscriptionTopics.Items.Add(topic);
                 listBoxAllTopicsSubscription.Items.RemoveAt(index);
 
@@ -151,7 +158,7 @@ namespace Dezbateri
             if (index != -1)
             {
                 string topic = listBoxYourSubscriptionTopics.Items[index].ToString();
-                dateUtilizator.SubscribeTopics.Remove(topic);
+                processData.SubscribeTopics.Remove(topic);
                 listBoxAllTopicsSubscription.Items.Add(topic);
                 listBoxYourSubscriptionTopics.Items.RemoveAt(index);
 
@@ -165,7 +172,7 @@ namespace Dezbateri
             if (index != -1)
             {
                 string topic = listBoxAllTopicsPub.Items[index].ToString();
-                dateUtilizator.PublishTopics.Add(topic);
+                processData.PublishTopics.Add(topic);
                 listBoxYourPubTopics.Items.Add(topic);
                 listBoxAllTopicsPub.Items.RemoveAt(index);
 
@@ -179,7 +186,7 @@ namespace Dezbateri
             if (index != -1)
             {
                 string topic = listBoxYourPubTopics.Items[index].ToString();
-                dateUtilizator.PublishTopics.Remove(topic);
+                processData.PublishTopics.Remove(topic);
                 listBoxAllTopicsPub.Items.Add(topic);
                 listBoxYourPubTopics.Items.RemoveAt(index);
 
@@ -190,15 +197,15 @@ namespace Dezbateri
         // afisam doar acele ferestre pe care le-a ales utilizatorul pentru publish
         private void ControlPublishDisplay()
         {
-            groupBoxSportPublish.Visible = this.dateUtilizator.PublishTopics.Contains("Sport");
-            groupBoxEducatiePublish.Visible = this.dateUtilizator.PublishTopics.Contains("Educatie");
-            groupBoxPoliticsPublish.Visible = this.dateUtilizator.PublishTopics.Contains("Politica");
-            groupBoxTechnologyPublish.Visible = this.dateUtilizator.PublishTopics.Contains("Tehnologie");
+            groupBoxSportPublish.Visible = this.processData.PublishTopics.Contains("Sport");
+            groupBoxEducatiePublish.Visible = this.processData.PublishTopics.Contains("Educatie");
+            groupBoxPoliticsPublish.Visible = this.processData.PublishTopics.Contains("Politica");
+            groupBoxTechnologyPublish.Visible = this.processData.PublishTopics.Contains("Tehnologie");
         }
 
         // cand nu avem token-ul, dezactivam controalele de scriere
         // cand il primim, le reactivam
-        private void ShowOrHidePublishDisplay(bool show)
+        private void ShowPublishDisplay(bool show)
         {
             groupBoxSportPublish.Enabled = show;
             groupBoxEducatiePublish.Enabled = show;
@@ -206,75 +213,49 @@ namespace Dezbateri
             groupBoxTechnologyPublish.Enabled = show;
         }
 
-        private void Timer1_Tick(object sender, EventArgs e)
-        {
-            dateUtilizator.LeftTokenDuration--;
-            if (dateUtilizator.LeftTokenDuration == 0)
-            {
-                //TokenHandler.SendToken(dateUtilizator.ExitPort);
-
-                // ** Ni s-a terminat timpul de pastrare a token-ului, deci il trimitem la vecinul din dreapta
-                tokenHandler.SendMessageToNextProcess("token");
-
-                timer1.Enabled = false;
-                ShowOrHidePublishDisplay(false);
-                labelHasToken.Text = "Waiting for token...";
-            }
-            else
-            {
-                labelHasToken.Text = "Token left: " + dateUtilizator.LeftTokenDuration + " s";
-            }
-        }
-
         // afisare ferestre pentru subscribe
         private void ControlSubscribeDisplay()
         {
-            groupBoxSubSport.Visible = dateUtilizator.SubscribeTopics.Contains("Sport");
-            groupBoxSubEducatie.Visible = dateUtilizator.SubscribeTopics.Contains("Educatie");
-            groupBoxSubPolitica.Visible = dateUtilizator.SubscribeTopics.Contains("Politica");
-            groupBoxSubTehnologie.Visible = dateUtilizator.SubscribeTopics.Contains("Tehnologie");
+            groupBoxSubSport.Visible = processData.SubscribeTopics.Contains("Sport");
+            groupBoxSubEducatie.Visible = processData.SubscribeTopics.Contains("Educatie");
+            groupBoxSubPolitica.Visible = processData.SubscribeTopics.Contains("Politica");
+            groupBoxSubTehnologie.Visible = processData.SubscribeTopics.Contains("Tehnologie");
         }
 
         private void ButtonGrabToken_Click(object sender, EventArgs e)
         {
             tokenHandler = new TokenHandler();
             tokenHandler.TokenReceivedHandler += TokenReceivedHandler;
-            tokenHandler.ListenForToken(dateUtilizator.EntryPort);
-            labelHasToken.Text = "Token left: " + dateUtilizator.LeftTokenDuration + " s";
-            timer1.Enabled = true;
-            ShowOrHidePublishDisplay(true);
+            tokenHandler.ListenForToken(processData.EntryPort);
+            labelHasToken.Text = "Token left: " + processData.LeftTokenDuration + " s";
+            timerKeepTokenCounter.Enabled = true;
+            ShowPublishDisplay(true);
         }
 
         private void ButtonBeginWaitingForToken_Click(object sender, EventArgs e)
         {
             tokenHandler = new TokenHandler();
             tokenHandler.TokenReceivedHandler += TokenReceivedHandler;
-            tokenHandler.ListenForToken(dateUtilizator.EntryPort);
-            ShowOrHidePublishDisplay(false);
+            tokenHandler.ListenForToken(processData.EntryPort);
+            ShowPublishDisplay(false);
             labelHasToken.Text = "Waiting for token...";
         }
 
         // Am primit token -> modif UI
         private void TokenReceivedHandler()
         {
-            dateUtilizator.LeftTokenDuration = dateUtilizator.TotalTokenDuration;   
+            processData.LeftTokenDuration = processData.TotalTokenDuration;   
             this.Invoke((MethodInvoker)delegate
             {
-                ShowOrHidePublishDisplay(true);
-                labelHasToken.Text = "Token left: " + dateUtilizator.LeftTokenDuration + " s";
-                timer1.Enabled = true;
+                ShowPublishDisplay(true);
+                labelHasToken.Text = "Token left: " + processData.LeftTokenDuration + " s";
+                timerKeepTokenCounter.Enabled = true;
             });
-        }
-
-        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            dateUtilizator.CloseSubscriptions();
-            tokenHandler.CloseSockets();
         }
 
         private void ButtonViewSentMessages_Click(object sender, EventArgs e)
         {
-            FormMessages formMessages = new FormMessages(dateUtilizator.Name, this.sentMessages);
+            FormMessages formMessages = new FormMessages(processData.Name, this.sentMessages);
             formMessages.Show();
         }
 
@@ -284,10 +265,36 @@ namespace Dezbateri
         {
             this.Invoke((MethodInvoker)delegate
             {
-                ShowOrHidePublishDisplay(false);
+                ShowPublishDisplay(false);
                 labelHasToken.Text = "Waiting for token...";
-                timer1.Enabled = false;
+                timerKeepTokenCounter.Enabled = false;
             });
+        }
+
+        private void TimerKeepTokenCounter_Tick(object sender, EventArgs e)
+        {
+            processData.LeftTokenDuration--;
+            if (processData.LeftTokenDuration == 0)
+            {
+                //TokenHandler.SendToken(processData.ExitPort);
+
+                // ** Ni s-a terminat timpul de pastrare a token-ului, deci il trimitem la vecinul din dreapta
+                tokenHandler.SendMessageToNextProcess("token");
+
+                timerKeepTokenCounter.Enabled = false;
+                ShowPublishDisplay(false);
+                labelHasToken.Text = "Waiting for token...";
+            }
+            else
+            {
+                labelHasToken.Text = "Token left: " + processData.LeftTokenDuration + " s";
+            }
+        }
+
+        private void DiscussionForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            processData.CloseSubscriptions();
+            tokenHandler.CloseSockets();
         }
     }
 }

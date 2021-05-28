@@ -16,13 +16,7 @@ namespace Dezbateri
         //   --> cand se face publish la un mesaj in exchange, atunci acesta va pune in fiecare coada legata de el mesajul
         public (IConnection connection, IModel channel) SubscribeToTopic(string exchangeName, string username, string topic)
         {
-            ConnectionFactory factory = new ConnectionFactory()
-            {
-                HostName = "localhost",
-                Port = 5672,
-                UserName = "guest",
-                Password = "guest"
-            };
+            ConnectionFactory factory = GetNewConnectionFactory();
             IConnection connection = factory.CreateConnection();
             IModel channel = connection.CreateModel();
             channel.ExchangeDeclare(exchangeName, "fanout");
@@ -44,13 +38,7 @@ namespace Dezbateri
         // Publish se face direct in exchange, urmand ca acesta sa redirecteze mesajul in cozile legate de el
         public void PublishMessage(string exchangeName, string message)
         {
-            ConnectionFactory factory = new ConnectionFactory()
-            {
-                HostName = "localhost",
-                Port = 5672,
-                UserName = "guest",
-                Password = "guest"
-            };
+            ConnectionFactory factory = GetNewConnectionFactory();
             using (IConnection connection = factory.CreateConnection())
             {
                 using (IModel channel = connection.CreateModel())
@@ -59,6 +47,17 @@ namespace Dezbateri
                     channel.BasicPublish(exchangeName, "", null, Encoding.UTF8.GetBytes(message));
                 }
             }
+        }
+
+        private static ConnectionFactory GetNewConnectionFactory()
+        {
+            return new ConnectionFactory
+            {
+                HostName = "localhost",
+                Port = 5672,
+                UserName = "guest",
+                Password = "guest"
+            };
         }
     }
 }

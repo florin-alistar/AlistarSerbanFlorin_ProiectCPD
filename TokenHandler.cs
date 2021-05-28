@@ -22,6 +22,11 @@ namespace Dezbateri
             try
             {
                 exitSocket?.Close();
+            }
+            catch { }
+
+            try
+            {
                 entrySocket?.Close();
             }
             catch { }
